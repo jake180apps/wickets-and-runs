@@ -1,6 +1,6 @@
 # Wickets & Runs
 
-A small scoreboard for English cricket darts, the bat-and-bowl pub game. Two sides. One batting innings each. It is not the 15–20 closing game.
+A small scoreboard for English cricket darts, the bat-and-bowl pub game. Two sides, as singles or teams of two, with one or two innings each. It is not the 15–20 closing game.
 
 The app is a static Progressive Web App: `index.html`, `styles.css`, `app.js`, and `logic.js`. It keeps the match on the tablet, works offline after it has been loaded from a secure address, and is laid out for an 8.7-inch screen in landscape or portrait.
 
@@ -30,12 +30,13 @@ Chrome only offers that install on a secure address (`https://`, or `localhost` 
 node --test
 ```
 
-The checks cover the 40-run rule, batter bulls, the treble 20 / outer bull / treble 19 visit, bowler misses, excess wickets, the end of an innings, the chase, and undo.
+The checks cover the 40-run rule, batter bulls, the treble 20 / outer bull / treble 19 visit, bowler misses, excess wickets, the end of an innings, the chase, and undo. They also cover two innings, team rotation, typed visits, declarations, early finishes, and averages.
 
 ## Scoring, in short
 
-- A visit is three darts. The batter throws first, then the bowler, then the batter.
-- The batter scores singles, doubles and triples. Only the points above 40 in that visit are runs. Bulls score 0 and take wickets: outer 1, inner 2.
-- The bowler takes wickets only with bulls. Any other number is off target.
-- At 0 wickets the innings ends immediately. Leftover darts are not thrown. Runs already on the batter's visit are kept.
-- The second innings is played until all out, even if the target has already been passed. The higher total wins. Level scores draw.
+- A visit is three darts, or one typed batting total. The batter throws first, then the bowler, then the batter. In a team, the teammates rotate after each finished visit. Batting and bowling rotate separately.
+- The batter scores singles, doubles and triples. Only the points above 40 in that visit are runs. Bulls score 0 and take wickets: outer 1, inner 2. A typed total uses the same rule and can record wickets lost.
+- The bowler takes wickets only with bulls, and bowling stays dart by dart. Any other number is off target.
+- At 0 wickets the innings ends immediately. Leftover darts are not thrown. Runs already on the batter's visit are kept. The batting side can also declare.
+- Each side bats for one or two innings. With two, the order is A, B, A, B. Innings are added into the match total.
+- The chase is a match-winning target only when the other side has no innings left. Play can continue after the target is passed, or the match can be ended once the winner is decided. The higher total wins. Level scores draw.

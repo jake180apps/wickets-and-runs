@@ -32,6 +32,13 @@ body {
 
 body {
   margin: 0;
+  height: 100vh;
+  height: 100dvh;
+  height: 100svh;
+  max-height: 100vh;
+  max-height: 100dvh;
+  max-height: 100svh;
+  overflow: hidden;
   color: var(--text);
   background:
     radial-gradient(900px 420px at 50% -12%, #1a3328 0%, transparent 58%),
@@ -62,24 +69,35 @@ p {
 }
 
 #app {
-  min-height: 100%;
+  height: 100%;
+  min-height: 0;
 }
 
 .screen {
-  min-height: 100dvh;
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  padding-top: max(10px, env(safe-area-inset-top));
-  padding-right: max(10px, env(safe-area-inset-right));
-  padding-bottom: max(10px, env(safe-area-inset-bottom));
-  padding-left: max(10px, env(safe-area-inset-left));
+  gap: clamp(4px, 0.8dvh, 8px);
+  padding: clamp(6px, 1.1dvh, 10px);
+  padding-top: max(6px, env(safe-area-inset-top));
+  padding-right: max(6px, env(safe-area-inset-right));
+  padding-bottom: max(6px, env(safe-area-inset-bottom));
+  padding-left: max(6px, env(safe-area-inset-left));
+}
+
+.screen-setup,
+.screen-break,
+.screen-result {
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .screen-live {
-  height: 100dvh;
-  max-height: 100dvh;
+  --tap: clamp(34px, 5.4dvh, 48px);
+  height: 100%;
+  max-height: 100%;
   min-height: 0;
   overflow: hidden;
 }
@@ -350,14 +368,15 @@ legend {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: clamp(4px, 0.7dvh, 8px);
   min-height: 0;
+  overflow: hidden;
 }
 
 .score-col {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: clamp(4px, 0.7dvh, 8px);
   min-width: 0;
   min-height: 0;
 }
@@ -445,11 +464,11 @@ legend {
 }
 
 .score {
-  font-size: clamp(2.6rem, 24cqi, 7.2rem);
+  font-size: clamp(1.7rem, min(20cqi, 7.2dvh), 4.4rem);
   font-weight: 800;
   letter-spacing: -0.045em;
   line-height: 0.85;
-  margin: 6px 0 2px;
+  margin: 2px 0;
   font-variant-numeric: tabular-nums;
 }
 
@@ -487,7 +506,7 @@ legend {
 .pips {
   display: flex;
   gap: 3px;
-  height: 28px;
+  height: clamp(12px, 2.6dvh, 24px);
   align-items: flex-end;
 }
 
@@ -590,9 +609,9 @@ legend {
 }
 
 .throw-name {
-  font-size: clamp(1.5rem, 3vw, 2.3rem);
+  font-size: clamp(1.15rem, min(4vw, 4.6dvh), 2rem);
   font-weight: 800;
-  line-height: 1;
+  line-height: 1.05;
   margin-top: 2px;
 }
 
@@ -645,11 +664,11 @@ legend {
 }
 
 .slot {
-  min-height: 76px;
+  min-height: 0;
   border-radius: 12px;
   border: 1px dashed #3e564b;
   background: #101816;
-  padding: 8px;
+  padding: clamp(4px, 0.7dvh, 8px);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -726,8 +745,10 @@ legend {
   container-type: inline-size;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: clamp(4px, 0.7dvh, 8px);
   min-width: 0;
+  min-height: 0;
+  flex: 1;
 }
 
 .pad {
@@ -958,11 +979,12 @@ button[data-action="miss"] {
   }
 }
 
-@media (orientation: landscape) and (min-width: 720px) {
+@media (orientation: landscape) and (min-width: 640px) {
   .play {
     display: grid;
-    grid-template-columns: minmax(0, 1.08fr) minmax(340px, 0.92fr);
-    gap: 10px;
+    grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr);
+    grid-template-rows: minmax(0, 1fr);
+    gap: clamp(4px, 1vh, 8px);
     align-items: stretch;
   }
 
@@ -970,9 +992,11 @@ button[data-action="miss"] {
     display: flex;
     flex-direction: column;
     min-height: 0;
+    overflow: hidden;
   }
 
-  .pad {
+  .pad,
+  .typed-form {
     flex: 1;
     min-height: 0;
   }
@@ -980,48 +1004,78 @@ button[data-action="miss"] {
   .nums {
     flex: 1;
     min-height: 0;
-    grid-template-rows: repeat(4, minmax(52px, 1fr));
+    grid-template-rows: repeat(4, minmax(0, 1fr));
   }
 
-  .num {
+  .num,
+  .mult,
+  .actions button {
     height: 100%;
     min-height: 0;
   }
 
   .cards {
     flex: 1;
+    min-height: 0;
   }
 
   .card {
     display: flex;
     flex-direction: column;
     justify-content: center;
+    min-height: 0;
   }
 }
 
 @media (orientation: portrait) {
   .play {
     display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr) minmax(200px, 1.05fr);
+    min-height: 0;
   }
 
-  .score-col {
-    overflow: auto;
-    scrollbar-color: #3e564b transparent;
+  .score-col,
+  .pad-col {
+    min-height: 0;
+    overflow: hidden;
   }
 
-  .cards {
+  .pad-col {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .pad,
+  .typed-form {
     flex: 1;
+    min-height: 0;
   }
 
-  .num {
-    min-height: 64px;
+  .nums {
+    flex: 1;
+    min-height: 0;
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+  }
+
+  .screen-live .num,
+  .screen-live .mult,
+  .screen-live .actions button {
+    min-height: 0;
+    height: 100%;
   }
 }
 
 @media (orientation: portrait) and (max-width: 640px) {
-  .actions {
-    grid-template-columns: 1fr 1fr;
+  .screen-live .actions {
+    grid-template-columns: 1.15fr 1.15fr 0.72fr 0.72fr;
+  }
+
+  .screen-live .bull {
+    font-size: 0.78rem;
+  }
+
+  .screen-live .bull span {
+    font-size: 0.68rem;
   }
 }
 
@@ -1037,6 +1091,14 @@ button[data-action="miss"] {
   }
 }
 
+@media (max-width: 420px) {
+  .screen-live .brand img,
+  .screen-break .brand img,
+  .screen-result .brand img {
+    display: none;
+  }
+}
+
 @media (max-height: 620px) {
   .screen {
     gap: 6px;
@@ -1047,13 +1109,13 @@ button[data-action="miss"] {
     font-size: 0.82rem;
   }
 
-  .slot {
-    min-height: 60px;
-    padding: 6px;
+  .screen-live .slot {
+    min-height: 0;
+    padding: 4px 6px;
   }
 
-  .score {
-    font-size: clamp(2.2rem, 14cqi, 4.2rem);
+  .screen-live .score {
+    font-size: clamp(1.45rem, min(16cqi, 6.4dvh), 3rem);
   }
 
   .setup-intro img {
@@ -1078,9 +1140,460 @@ button[data-action="miss"] {
     filter: brightness(1.08);
   }
 
-  .mult.is-on:hover,
-  .choice button.is-on:hover,
-  .primary:hover {
+.mult.is-on:hover,
+.choice button.is-on:hover,
+.primary:hover {
     filter: brightness(0.97);
+  }
+}
+
+.brand {
+  flex: 1;
+}
+
+.brand > div {
+  min-width: 0;
+}
+
+.brand-name,
+.brand-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.top-actions {
+  flex: none;
+}
+
+.setup-intro h1 {
+  font-size: clamp(1.8rem, 4.6vw, 3.2rem);
+}
+
+.optional {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.team-pair {
+  display: grid;
+  gap: 10px;
+}
+
+.team-block {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--key-line);
+  border-radius: 14px;
+  background: #18241c;
+}
+
+.throw-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.throw-team,
+.active-player,
+.innings-split {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.active-player,
+.innings-split,
+.throw-team {
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
+.active-player {
+  color: var(--gold);
+}
+
+.card.is-bowling .active-player,
+.throw-team {
+  color: var(--bowl);
+}
+
+.innings-split,
+.throw-team {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.declare-btn {
+  flex: none;
+  min-height: 40px;
+  padding: 0 10px;
+}
+
+.end-match {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  min-height: 42px;
+  border: 0;
+  border-radius: 12px;
+  background: #14210a;
+  color: #f4f7e4;
+  font-weight: 800;
+  font-size: 1rem;
+}
+
+.pad-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  min-height: 0;
+}
+
+.pad-head .hint {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.mode-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.mode-toggle button {
+  min-height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--key-line);
+  background: var(--key);
+  color: var(--text);
+  font-weight: 800;
+  padding: 0 10px;
+}
+
+.mode-toggle button.is-on {
+  background: var(--lime);
+  color: var(--lime-ink);
+  border-color: var(--lime);
+}
+
+.screen-live .pad,
+.screen-live .typed-form {
+  flex: 1;
+  min-height: 0;
+}
+
+.screen-live .nums {
+  flex: 1;
+  min-height: 0;
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+}
+
+.screen-live .num,
+.screen-live .mult,
+.screen-live .actions button {
+  min-height: 0;
+}
+
+.typed-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  background: var(--pad);
+  border: 1px solid #2c4036;
+  border-radius: 16px;
+}
+
+.typed-form input {
+  width: 100%;
+  min-height: 52px;
+  border-radius: 12px;
+  border: 1px solid var(--key-line);
+  background: #0e1512;
+  padding: 0 12px;
+  font-size: 1.6rem;
+  font-weight: 800;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.wicket-step {
+  display: grid;
+  grid-template-columns: 52px 1fr 52px;
+  gap: 8px;
+  align-items: center;
+}
+
+.wicket-step button {
+  min-height: 48px;
+  border-radius: 12px;
+  border: 1px solid var(--key-line);
+  background: var(--key);
+  font-size: 1.5rem;
+  font-weight: 800;
+}
+
+.wicket-step p {
+  text-align: center;
+}
+
+.wicket-step strong {
+  display: block;
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.typed-preview {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.typed-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.typed-actions .primary {
+  flex: 1;
+}
+
+.slots-typed {
+  grid-template-columns: 1fr;
+}
+
+.averages {
+  display: grid;
+  gap: 8px;
+}
+
+.averages h2,
+.avg-kicker {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.avg-kicker {
+  margin: 4px 0 0;
+}
+
+.avg-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.avg-card {
+  min-width: 0;
+  background: #17211c;
+  border: 1px solid #31463c;
+  border-radius: 14px;
+  padding: 10px 12px;
+}
+
+.avg-card.is-team {
+  border-color: var(--gold);
+}
+
+.avg-card h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avg-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+
+.avg-line strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.avg-note {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.screen-live .card {
+  padding: clamp(6px, 0.8dvh, 10px) clamp(8px, 1vw, 12px);
+}
+
+.screen-live .visitbox,
+.screen-live .throwbar,
+.screen-live .chase {
+  padding: clamp(6px, 0.8dvh, 10px) clamp(8px, 1vw, 12px);
+}
+
+@media (min-width: 720px) {
+  .team-pair {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .avg-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (orientation: portrait) and (max-height: 900px) {
+  .screen-live .hint,
+  .screen-live .throwing-flag,
+  .screen-live .toss,
+  .throwbar .role {
+    display: none;
+  }
+
+  .screen-live .slot {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 1px 6px;
+    padding: 4px 6px;
+  }
+
+  .screen-live .score {
+    font-size: clamp(1.35rem, 14cqi, 2.5rem);
+    margin: 0;
+  }
+
+  .screen-live .pips {
+    height: 10px;
+  }
+
+  .screen-live .card,
+  .screen-live .throwbar,
+  .screen-live .visitbox,
+  .screen-live .chase {
+    padding: 5px 8px;
+  }
+
+  .screen-live .slot {
+    padding: 3px 6px;
+  }
+
+  .screen-live .slot-label {
+    font-size: 0.95rem;
+  }
+
+  .screen-live .maths {
+    margin-top: 4px;
+    font-size: 0.92rem;
+  }
+
+  .screen-live .throw-name {
+    font-size: 1.15rem;
+  }
+
+  .screen-live .chase-main {
+    font-size: 1rem;
+  }
+
+  .screen-live .chase-sub {
+    font-size: 0.8rem;
+  }
+
+  .chase.is-ahead {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 8px;
+  }
+
+  .chase.is-ahead .chase-main {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .chase.is-ahead .chase-sub {
+    display: none;
+  }
+
+  .chase.is-ahead .end-match {
+    grid-column: 2;
+    grid-row: 1;
+    width: auto;
+    margin: 0;
+    min-height: 36px;
+    padding: 0 12px;
+  }
+
+  .screen-live .wickets {
+    margin-top: 4px;
+  }
+}
+
+@media (orientation: portrait) and (max-height: 720px) {
+  .screen-live .pips {
+    display: none;
+  }
+
+  .screen-live .score-col {
+    gap: 3px;
+  }
+
+  .screen-live .throwbar,
+  .screen-live .visitbox,
+  .screen-live .chase,
+  .screen-live .card {
+    padding: 4px 6px;
+  }
+
+  .screen-live .maths,
+  .screen-live .last-visit {
+    margin-top: 2px;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 430px) {
+  .screen-live .hint,
+  .screen-live .brand img,
+  .screen-live .throwing-flag,
+  .screen-live .slot-index,
+  .throwbar .role {
+    display: none;
+  }
+
+  .eyebrow {
+    white-space: nowrap;
+  }
+
+  .screen-live .pips {
+    height: 8px;
+  }
+
+  .screen-live .wicket-count,
+  .screen-live .caption,
+  .screen-live .slot-note {
+    font-size: 0.72rem;
+  }
+
+  .screen-live .topbar {
+    min-height: 0;
+  }
+
+  .screen-live .card,
+  .screen-live .throwbar,
+  .screen-live .visitbox,
+  .screen-live .chase,
+  .screen-live .pad {
+    padding: 4px 6px;
+  }
+
+  .mode-toggle button,
+  .declare-btn {
+    min-height: 32px;
   }
 }

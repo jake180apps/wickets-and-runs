@@ -1,8 +1,13 @@
 import {
   beginSecondInnings,
   createMatch,
+  declareInnings,
+  finishMatch,
   project,
+  recordTypedVisit,
   reviveMatch,
+  runsFromVisit,
+  setBattingInput,
   throwDart,
   undo,
 } from "./logic.js";
@@ -20,9 +25,11 @@ const state = {
 };
 
 let match = null;
-let draft = { side1: "Player 1", side2: "Player 2", wickets: 10, bats: null };
+let draft = defaultDraft();
 let multiplier = 1;
 let pendingAnnounce = "";
+let typedPoints = "";
+let typedWickets = 0;
 
 app.addEventListener("click", onClick);
 app.addEventListener("input", onInput);
@@ -92,9 +99,51 @@ function onClick(event) {
     render();
     return;
   }
+  if (action === "innings") {
+    draft.inningsEach = Number(button.dataset.innings) === 2 ? 2 : 1;
+    persistDraft();
+    render();
+    return;
+  }
+  if (action === "format") {
+    draft.format = button.dataset.format === "teams" ? "teams" : "singles";
+    persistDraft();
+    render();
+    return;
+  }
   if (action === "bats") {
     draft.bats = button.dataset.bats === "random" ? "random" : Number(button.dataset.bats);
     render();
+    return;
+  }
+  if (action === "input-mode") {
+    setInputMode(button.dataset.mode === "total" ? "total" : "darts");
+    return;
+  }
+  if (action === "wickets-lost") {
+    stepWickets(Number(button.dataset.dir) < 0 ? -1 : 1);
+    return;
+  }
+  if (action === "ask-declare") {
+    if (!match || project(match).phase !== "live") return;
+    state.rules = false;
+    state.confirm = "declare";
+    render();
+    return;
+  }
+  if (action === "confirm-declare") {
+    confirmDeclare();
+    return;
+  }
+  if (action === "ask-finish") {
+    if (!match || !project(match).canFinishEarly) return;
+    state.rules = false;
+    state.confirm = "finish";
+    render();
+    return;
+  }
+  if (action === "confirm-finish") {
+    confirmFinish();
     return;
   }
   if (action === "resume" || action === "resume-saved") {
@@ -115,17 +164,32 @@ function onClick(event) {
 }
 
 function onInput(event) {
-  if (event.target.id === "side1") draft.side1 = event.target.value;
-  if (event.target.id === "side2") draft.side2 = event.target.value;
+  const field = event.target;
+  if (field.id === "visit-total") {
+    typedPoints = field.value;
+    updateTypedPreview();
+    return;
+  }
+  if (field.id === "single-0") draft.singles[0] = field.value;
+  if (field.id === "single-1") draft.singles[1] = field.value;
+  if (field.dataset.team != null) {
+    const side = Number(field.dataset.team);
+    if (field.dataset.field === "label") draft.teams[side].label = field.value;
+    if (field.dataset.player != null) draft.teams[side].players[Number(field.dataset.player)] = field.value;
+  }
   const first = document.getElementById("bats-0");
   const second = document.getElementById("bats-1");
-  if (first) first.querySelector(".choice-name").textContent = clean(draft.side1) || "Player 1";
-  if (second) second.querySelector(".choice-name").textContent = clean(draft.side2) || "Player 2";
+  if (first) first.querySelector(".choice-name").textContent = sideLabel(0);
+  if (second) second.querySelector(".choice-name").textContent = sideLabel(1);
   persistDraft();
 }
 
 function onSubmit(event) {
   event.preventDefault();
+  if (event.target.id === "typed-form") {
+    bankTyped();
+    return;
+  }
   requestStart();
 }
 
@@ -169,19 +233,38 @@ function commitStart() {
     battingFirst = Math.random() < 0.5 ? 0 : 1;
     toss = "random";
   }
-  match = createMatch({
-    sides: [draft.side1, draft.side2],
-    wickets: draft.wickets,
-    battingFirst,
-    toss,
-  });
+  const inningsEach = draft.inningsEach === 2 ? 2 : 1;
+  const battingInput = draft.battingInput === "total" ? "total" : "darts";
+  if (draft.format === "teams") {
+    match = createMatch({
+      format: "teams",
+      sides: [draft.teams[0].label, draft.teams[1].label],
+      players: [draft.teams[0].players, draft.teams[1].players],
+      wickets: draft.wickets,
+      battingFirst,
+      toss,
+      inningsEach,
+      battingInput,
+    });
+  } else {
+    match = createMatch({
+      sides: draft.singles,
+      wickets: draft.wickets,
+      battingFirst,
+      toss,
+      inningsEach,
+      battingInput,
+    });
+  }
   state.offer = null;
   state.confirm = null;
   state.rules = false;
-  multiplier = 1;
+  clearEntry();
   persistMatch();
-  const name = match.sides[battingFirst];
-  pendingAnnounce = toss === "random" ? `Random pick. ${name} bats first.` : `${name} bats first.`;
+  const view = project(match);
+  pendingAnnounce = toss === "random"
+    ? `Random pick. ${view.batterName} bats first.`
+    : `${view.batterName} bats first.`;
   render();
 }
 
@@ -200,11 +283,76 @@ function record(dart) {
   render();
 }
 
+function bankTyped() {
+  if (!match) return;
+  const points = parseTotal(typedPoints);
+  if (points == null) return;
+  const before = project(match);
+  try {
+    match = recordTypedVisit(match, { points, wickets: typedWickets });
+  } catch {
+    return;
+  }
+  clearEntry();
+  const after = project(match);
+  pendingAnnounce = announceChange(before, after);
+  persistMatch();
+  render();
+}
+
+function confirmDeclare() {
+  if (!match) return;
+  const before = project(match);
+  try {
+    match = declareInnings(match);
+  } catch {
+    return;
+  }
+  state.confirm = null;
+  clearEntry();
+  pendingAnnounce = announceChange(before, project(match));
+  persistMatch();
+  render();
+}
+
+function confirmFinish() {
+  if (!match) return;
+  const before = project(match);
+  try {
+    match = finishMatch(match);
+  } catch {
+    return;
+  }
+  state.confirm = null;
+  clearEntry();
+  pendingAnnounce = announceChange(before, project(match));
+  persistMatch();
+  render();
+}
+
+function stepWickets(dir) {
+  if (!match) return;
+  const view = project(match);
+  const max = Math.min(6, view.wicketsRemaining);
+  typedWickets = Math.max(0, Math.min(max, typedWickets + dir));
+  render();
+}
+
+function setInputMode(mode) {
+  draft.battingInput = mode;
+  persistDraft();
+  if (match) {
+    match = setBattingInput(match, mode);
+    persistMatch();
+  }
+  render();
+}
+
 function doUndo() {
   if (!match || match.events.length === 0) return;
   match = undo(match);
-  multiplier = 1;
-  pendingAnnounce = "Last dart undone.";
+  clearEntry();
+  pendingAnnounce = "Undone.";
   persistMatch();
   render();
 }
@@ -216,9 +364,9 @@ function startSecond() {
   } catch {
     return;
   }
-  multiplier = 1;
+  clearEntry();
   const view = project(match);
-  pendingAnnounce = `${view.sides[view.battingSide]} to bat.`;
+  pendingAnnounce = `${view.batterName} to bat.`;
   persistMatch();
   render();
 }
@@ -238,18 +386,28 @@ function clearMatch() {
   state.offer = null;
   state.confirm = null;
   state.rules = false;
-  multiplier = 1;
   draft.bats = null;
+  clearEntry();
   persistMatch();
   pendingAnnounce = "";
   render();
+}
+
+function clearEntry() {
+  multiplier = 1;
+  typedPoints = "";
+  typedWickets = 0;
 }
 
 function resume(saved) {
   match = saved;
   state.offer = null;
   state.confirm = null;
-  multiplier = 1;
+  clearEntry();
+  if (match.battingInput === "total" || match.battingInput === "darts") {
+    draft.battingInput = match.battingInput;
+    persistDraft();
+  }
   pendingAnnounce = resumeText(project(match));
   render();
 }
@@ -272,7 +430,7 @@ function render() {
   if (screen === "live") body = renderLive(view);
   if (screen === "break") body = renderBreak(view);
   if (screen === "result") body = renderResult(view);
-  app.innerHTML = body + (state.rules ? rulesModal() : "") + (state.confirm ? confirmModal() : "");
+  app.innerHTML = body + (state.rules ? rulesModal() : "") + (state.confirm ? confirmModal(view) : "");
   document.body.dataset.screen = screen;
   if (state.rules || state.confirm) {
     const screenEl = app.querySelector(".screen");
@@ -284,7 +442,7 @@ function render() {
     liveRegion.textContent = pendingAnnounce;
     pendingAnnounce = "";
   }
-  document.title = screen === "live" ? `${view.sides[view.throwingSide]} · Wickets & Runs` : "Wickets & Runs";
+  document.title = screen === "live" ? `${view.throwingName} · Wickets & Runs` : "Wickets & Runs";
 }
 
 function screenOf(view) {
@@ -296,6 +454,7 @@ function screenOf(view) {
 
 function renderSetup() {
   const ready = draft.bats === 0 || draft.bats === 1 || draft.bats === "random";
+  const teams = draft.format === "teams";
   return `
     <div class="screen screen-setup">
       ${topbar(null)}
@@ -303,18 +462,25 @@ function renderSetup() {
         <div class="setup-intro">
           <img src="./icons/icon.svg" width="72" height="72" alt="">
           <h1>Wickets &amp; Runs</h1>
-          <p>English cricket darts for two sides. One batting innings each. Not the 15–20 closing game.</p>
+          <p>English cricket darts for two sides. Singles or teams of two. One or two innings each.</p>
         </div>
         <form class="setup-form" id="setup-form">
           ${offerCard()}
-          <label class="field">
-            <span>Side 1</span>
-            <input id="side1" maxlength="24" autocomplete="off" autocapitalize="words" enterkeyhint="next" value="${esc(draft.side1)}">
-          </label>
-          <label class="field">
-            <span>Side 2</span>
-            <input id="side2" maxlength="24" autocomplete="off" autocapitalize="words" enterkeyhint="done" value="${esc(draft.side2)}">
-          </label>
+          <fieldset>
+            <legend>Sides</legend>
+            <div class="choice" role="group" aria-label="Sides">
+              ${setupChoice("format", "singles", "Singles", "Two players", draft.format === "singles")}
+              ${setupChoice("format", "teams", "Teams of 2", "Four players", draft.format === "teams")}
+            </div>
+          </fieldset>
+          ${teams ? teamFields() : singleFields()}
+          <fieldset>
+            <legend>Innings each</legend>
+            <div class="choice" role="group" aria-label="Innings each">
+              ${setupChoice("innings", "1", "1 innings", "One each", draft.inningsEach !== 2)}
+              ${setupChoice("innings", "2", "2 innings", "Two each", draft.inningsEach === 2)}
+            </div>
+          </fieldset>
           <fieldset>
             <legend>Wickets</legend>
             <div class="choice" role="group" aria-label="Wickets">
@@ -339,12 +505,53 @@ function renderSetup() {
     </div>`;
 }
 
+function singleFields() {
+  return `
+    <label class="field">
+      <span>Player 1</span>
+      <input id="single-0" maxlength="24" autocomplete="off" autocapitalize="words" enterkeyhint="next" value="${esc(draft.singles[0])}">
+    </label>
+    <label class="field">
+      <span>Player 2</span>
+      <input id="single-1" maxlength="24" autocomplete="off" autocapitalize="words" enterkeyhint="done" value="${esc(draft.singles[1])}">
+    </label>`;
+}
+
+function teamFields() {
+  return `<div class="team-pair">${teamBlock(0)}${teamBlock(1)}</div>`;
+}
+
+function teamBlock(index) {
+  const team = draft.teams[index];
+  return `
+    <fieldset class="team-block">
+      <legend>Team ${index + 1}</legend>
+      <label class="field">
+        <span>Team name <span class="optional">(optional)</span></span>
+        <input data-team="${index}" data-field="label" maxlength="24" autocomplete="off" autocapitalize="words" enterkeyhint="next" value="${esc(team.label)}" placeholder="${esc(fallbackTeam(index))}">
+      </label>
+      <label class="field">
+        <span>Player 1</span>
+        <input data-team="${index}" data-player="0" maxlength="24" autocomplete="off" autocapitalize="words" enterkeyhint="next" value="${esc(team.players[0])}">
+      </label>
+      <label class="field">
+        <span>Player 2</span>
+        <input data-team="${index}" data-player="1" maxlength="24" autocomplete="off" autocapitalize="words" enterkeyhint="next" value="${esc(team.players[1])}">
+      </label>
+    </fieldset>`;
+}
+
 function renderLive(view) {
+  const typed = showTyped(view);
   const bowling = view.visitRole === "bowler";
   const armed = multiplier === 2 ? " Double is armed." : multiplier === 3 ? " Triple is armed." : "";
-  const hint = bowling
-    ? "Bowling. Only a bull takes a wicket. Any other number is off target."
-    : "Batting. Runs are the visit total above 40. A bull is a wicket and scores 0.";
+  let hint = bowling
+    ? "Bowling. Only a bull takes a wicket."
+    : "Batting. Runs are the visit total above 40.";
+  if (!bowling && view.battingInput === "total" && view.visit.length > 0) {
+    hint = "Finish these darts. The next visit can be typed.";
+  }
+  if (typed) hint = "Type the visit total from the dartboard. Bulls score 0.";
   return `
     <div class="screen screen-live">
       ${topbar(view)}
@@ -360,8 +567,11 @@ function renderLive(view) {
           ${visitBox(view)}
         </section>
         <section class="pad-col" aria-label="Dart entry">
-          <p class="hint">${hint}${armed}</p>
-          ${pad(view)}
+          <div class="pad-head">
+            ${modeToggle(view)}
+            <p class="hint">${hint}${bowling ? "" : armed}</p>
+          </div>
+          ${typed ? typedPad(view) : pad(view)}
         </section>
       </div>
     </div>`;
@@ -370,21 +580,27 @@ function renderLive(view) {
 function renderBreak(view) {
   const name = view.sides[view.battingSide];
   const next = view.sides[view.bowlingSide];
-  const total = view.runs[view.battingSide];
+  const declared = view.endReason === "declare";
+  const headline = declared ? `Declared on ${view.inningsRuns}` : `All out for ${view.inningsRuns}`;
+  const nextNumber = nextInningsNumber(view);
+  const nextDetail = view.inningsEach === 2 ? `, innings ${nextNumber} of 2` : "";
+  const button = view.inningsEach === 1 ? "Start second innings" : "Start next innings";
+  const totalNote = view.inningsEach === 2 ? `<p class="stage-copy">Match total ${view.runs[view.battingSide]}.</p>` : "";
   return `
     <div class="screen screen-break">
       ${topbar(view)}
       <div class="stage">
         <p class="eyebrow">Innings closed</p>
         <p class="stage-name">${esc(name)}</p>
-        <h1>All out for ${total}</h1>
+        <h1>${headline}</h1>
         <p class="stage-lead">Roles reverse</p>
-        <p class="stage-copy">${esc(next)} will bat. ${esc(name)} will bowl.</p>
+        <p class="stage-copy">${esc(next)} will bat${nextDetail}. ${esc(name)} will bowl.</p>
+        ${totalNote}
         ${miniScores(view)}
         ${closingVisit(view)}
         <div class="stage-actions">
-          <button type="button" class="primary" data-action="second">Start second innings</button>
-          <button type="button" class="texty" data-action="undo">Undo last dart</button>
+          <button type="button" class="primary" data-action="second">${button}</button>
+          <button type="button" class="texty" data-action="undo">Undo</button>
         </div>
       </div>
     </div>`;
@@ -397,6 +613,7 @@ function renderResult(view) {
     ? `Both sides scored ${view.runs[0]}.`
     : `By ${plural(result.margin, "run")}.`;
   const first = view.battingFirst;
+  const early = view.endReason === "finish" ? `<p class="stage-copy">Ended once the result was decided.</p>` : "";
   return `
     <div class="screen screen-result">
       ${topbar(view)}
@@ -404,24 +621,21 @@ function renderResult(view) {
         <p class="eyebrow">Match result</p>
         <h1>${esc(title)}</h1>
         <p class="stage-lead">${esc(detail)}</p>
+        ${early}
         <div class="result-scores">
-          ${resultCard(view, first, "1st innings")}
-          ${resultCard(view, 1 - first, "2nd innings")}
+          ${resultCard(view, first, view.inningsEach === 1 ? "1st innings" : "Match total")}
+          ${resultCard(view, 1 - first, view.inningsEach === 1 ? "2nd innings" : "Match total")}
         </div>
+        ${renderAverages(view)}
         <div class="stage-actions">
           <button type="button" class="primary" data-action="again">Play again</button>
-          <button type="button" class="texty" data-action="undo">Undo last dart</button>
+          <button type="button" class="texty" data-action="undo">Undo</button>
         </div>
       </div>
     </div>`;
 }
 
 function topbar(view) {
-  const sub = !view
-    ? "Cricket darts"
-    : view.phase === "done"
-      ? "Match over"
-      : `${view.innings === 1 ? "1st" : "2nd"} innings`;
   const fresh = !view;
   return `
     <header class="topbar">
@@ -429,7 +643,7 @@ function topbar(view) {
         <img src="./icons/icon.svg" width="36" height="36" alt="">
         <div>
           <p class="brand-name">Wickets &amp; Runs</p>
-          <p class="brand-sub">${sub}</p>
+          <p class="brand-sub">${esc(topSub(view))}</p>
         </div>
       </div>
       <div class="top-actions">
@@ -439,30 +653,58 @@ function topbar(view) {
     </header>`;
 }
 
+function topSub(view) {
+  if (!view) return "Cricket darts";
+  if (view.phase === "done") return "Match over";
+  if (view.phase === "break") return "Innings break";
+  if (view.inningsEach === 1) return view.innings === 1 ? "1st innings" : "2nd innings";
+  return `Innings ${view.sideInnings} of 2`;
+}
+
 function sideCard(view, index) {
   const throwing = view.throwingSide === index;
   const batting = view.battingSide === index;
   const name = view.sides[index];
-  let caption = "1st innings";
-  if (batting) caption = view.innings === 1 ? "1st innings" : "2nd innings";
-  else if (view.innings === 1) caption = "Yet to bat";
+  const player = batting ? view.batterName : view.bowlerName;
   const pending = batting && view.pendingRuns > 0
     ? `<span class="pending">+${view.pendingRuns}<span class="pending-label">pending</span></span>`
     : "";
+  const playerLine = view.format === "teams"
+    ? `<p class="active-player">${esc(player)}</p>`
+    : "";
+  const split = view.inningsEach === 2 ? `<p class="innings-split">${esc(splitText(view, index))}</p>` : "";
   return `
     <article class="card ${throwing ? "is-throwing" : ""} ${batting ? "is-batting" : "is-bowling"}" ${throwing ? 'aria-current="true"' : ""}>
       <header class="card-top">
         <h2 class="side-name" title="${esc(name)}">${esc(name)}</h2>
         <span class="role ${batting ? "role-bat" : "role-bowl"}">${batting ? "Batting" : "Bowling"}</span>
       </header>
+      ${playerLine}
       <div class="scoreline">
         <p class="score">${view.runs[index]}</p>
         ${pending}
       </div>
-      <p class="caption">${caption}</p>
+      <p class="caption">${cardCaption(view, index)}</p>
+      ${split}
       ${batting ? pipRow(view) : ""}
       ${throwing ? `<p class="throwing-flag">Throwing</p>` : ""}
     </article>`;
+}
+
+function cardCaption(view, index) {
+  const batting = view.battingSide === index;
+  if (view.inningsEach === 1) {
+    if (batting) return view.innings === 1 ? "1st innings" : "2nd innings";
+    if (view.innings === 1) return "Yet to bat";
+    return "1st innings";
+  }
+  if (batting) return `Innings ${view.sideInnings} of 2`;
+  if (view.byInnings[index].every((runs) => runs == null)) return "Yet to bat";
+  return "Match total";
+}
+
+function splitText(view, index) {
+  return view.byInnings[index].map((runs) => (runs == null ? "—" : String(runs))).join(" · ");
 }
 
 function pipRow(view) {
@@ -492,8 +734,8 @@ function chaseBanner(view) {
   let main = `Needs ${chase.needed} more to win`;
   let sub = `Target ${chase.target}`;
   if (chase.status === "ahead") {
-    main = `Ahead by ${plural(chase.aheadBy, "run")} — already won`;
-    sub = "Play on until all out. This lead cannot be caught.";
+    main = `Ahead by ${plural(chase.aheadBy, "run")}`;
+    sub = "This lead cannot be caught. Play on, or end the match.";
   } else if (chase.status === "level") {
     main = "Level — needs 1 more to win";
   }
@@ -507,26 +749,32 @@ function chaseBanner(view) {
       sub = `${plural(view.pendingRuns, "run")} waiting in this visit · target ${chase.target}`;
     }
   }
+  const finish = view.canFinishEarly
+    ? `<button type="button" class="end-match" data-action="ask-finish">End match</button>`
+    : "";
   return `
     <div class="chase is-${chase.status}" role="status">
       <p class="chase-main">${main}</p>
       <p class="chase-sub">${sub}</p>
+      ${finish}
     </div>`;
 }
 
 function throwBar(view) {
-  const name = view.sides[view.throwingSide];
   const batting = view.visitRole === "batter";
   const left = view.dartsLeft;
+  const team = view.format === "teams" ? `<p class="throw-team">${esc(view.sides[view.throwingSide])}</p>` : "";
   return `
     <div class="throwbar ${batting ? "is-batting" : "is-bowling"}">
-      <div>
+      <div class="throw-copy">
         <p class="eyebrow">Now throwing</p>
-        <p class="throw-name">${esc(name)}</p>
+        <p class="throw-name">${esc(view.throwingName)}</p>
+        ${team}
       </div>
       <span class="role ${batting ? "role-bat" : "role-bowl"}">${batting ? "Batting" : "Bowling"}</span>
+      <button type="button" class="texty declare-btn" data-action="ask-declare">Declare</button>
       <div class="darts-left">
-        ${dartPips(view.dartsThrown, batting)}
+        ${dartPips(view.dartsThrown)}
         <p>${left} ${left === 1 ? "dart" : "darts"} left</p>
       </div>
     </div>`;
@@ -560,24 +808,42 @@ function visitMaths(view) {
 function lastLine(view) {
   const last = view.lastVisit;
   if (!last || view.visit.length > 0) return "";
+  return `<p class="last-visit">${esc(visitSummary(last))}</p>`;
+}
+
+function visitSummary(last) {
+  if (last.kind === "typed") {
+    const runs = last.runs === 0 ? "no runs" : plural(last.runs, "run");
+    const wickets = last.wickets ? ` · ${plural(last.wickets, "wicket")} lost` : "";
+    return `Last visit typed ${last.points} · ${runs} banked${wickets}`;
+  }
   if (last.role === "batter") {
     const wickets = last.wickets ? ` · ${plural(last.wickets, "wicket")}` : "";
     const runs = last.runs === 0 ? "no runs" : plural(last.runs, "run");
-    return `<p class="last-visit">Last visit ${last.points} · ${runs} banked${wickets}</p>`;
+    return `Last visit ${last.points} · ${runs} banked${wickets}`;
   }
-  return `<p class="last-visit">Last visit · ${plural(last.wickets, "wicket")}</p>`;
+  return `Last visit · ${plural(last.wickets, "wicket")}`;
 }
 
 function closingVisit(view) {
   const closing = view.closingVisit;
   if (!closing) return "";
-  const summary = closing.role === "batter"
-    ? `Last visit ${closing.points} · ${closing.runs === 0 ? "no runs" : plural(closing.runs, "run")} banked`
-    : `Last visit · ${plural(closing.wickets, "wicket")}`;
+  if (closing.kind === "typed") {
+    const dart = {
+      kind: closing.wickets ? "wicket" : "score",
+      label: String(closing.points),
+      note: closing.wickets ? plural(closing.wickets, "wicket") : "Visit total",
+    };
+    return `
+      <div class="visitbox">
+        <div class="slots slots-typed">${slotHtml(dart, 0, "")}</div>
+        <p class="last-visit">${esc(visitSummary(closing))}</p>
+      </div>`;
+  }
   return `
     <div class="visitbox">
       <div class="slots">${slotsHtml(closing.darts, "Not thrown")}</div>
-      <p class="last-visit">${summary}</p>
+      <p class="last-visit">${esc(visitSummary(closing))}</p>
     </div>`;
 }
 
@@ -589,12 +855,48 @@ function slotHtml(dart, index, emptyLabel) {
   if (!dart) {
     return `<div class="slot"><span class="slot-index">Dart ${index + 1}</span><span class="slot-empty">${emptyLabel}</span></div>`;
   }
+  const indexLabel = dart.note === "Visit total" || emptyLabel === "" ? "Visit total" : `Dart ${index + 1}`;
   return `
     <div class="slot is-${dart.kind}">
-      <span class="slot-index">Dart ${index + 1}</span>
+      <span class="slot-index">${indexLabel}</span>
       <span class="slot-label">${esc(dart.label)}</span>
       <span class="slot-note">${esc(dart.note)}</span>
     </div>`;
+}
+
+function modeToggle(view) {
+  const total = view.battingInput === "total";
+  return `
+    <div class="mode-toggle" role="group" aria-label="Batting entry">
+      <button type="button" data-action="input-mode" data-mode="darts" class="${total ? "" : "is-on"}" aria-pressed="${!total}">Darts</button>
+      <button type="button" data-action="input-mode" data-mode="total" class="${total ? "is-on" : ""}" aria-pressed="${total}">Type total</button>
+    </div>`;
+}
+
+function showTyped(view) {
+  return view.visitRole === "batter" && view.battingInput === "total" && view.visit.length === 0;
+}
+
+function typedPad(view) {
+  const max = Math.min(6, view.wicketsRemaining);
+  const points = parseTotal(typedPoints);
+  return `
+    <form class="typed-form" id="typed-form">
+      <label class="field">
+        <span>Visit total</span>
+        <input id="visit-total" inputmode="numeric" enterkeyhint="done" autocomplete="off" maxlength="3" placeholder="0–180" value="${esc(typedPoints)}">
+      </label>
+      <div class="wicket-step" role="group" aria-label="Wickets lost">
+        <button type="button" data-action="wickets-lost" data-dir="-1" ${typedWickets <= 0 ? "disabled" : ""} aria-label="Fewer wickets">−</button>
+        <p><span class="eyebrow">Wickets lost</span><strong>${typedWickets}</strong></p>
+        <button type="button" data-action="wickets-lost" data-dir="1" ${typedWickets >= max ? "disabled" : ""} aria-label="More wickets">+</button>
+      </div>
+      <p class="typed-preview" id="typed-preview">${esc(typedPreviewText(points))}</p>
+      <div class="typed-actions">
+        <button type="button" class="texty" data-action="undo" ${view.canUndo ? "" : "disabled"}>Undo</button>
+        <button type="submit" class="primary" id="bank-visit" ${points == null ? "disabled" : ""}>Confirm visit</button>
+      </div>
+    </form>`;
 }
 
 function pad(view) {
@@ -639,20 +941,48 @@ function miniScores(view) {
 }
 
 function miniCard(view, index) {
+  const caption = view.inningsEach === 2 ? `<p class="caption">Match total</p>` : "";
   return `
     <article class="card">
       <h2 class="side-name">${esc(view.sides[index])}</h2>
       <p class="score">${view.runs[index]}</p>
+      ${caption}
     </article>`;
 }
 
 function resultCard(view, index, label) {
   const won = view.result.type === "win" && view.result.side === index;
+  const split = view.inningsEach === 2 ? `<p class="innings-split">${esc(splitText(view, index))}</p>` : "";
   return `
     <article class="card ${won ? "is-winner" : ""}">
       <h2 class="side-name">${esc(view.sides[index])}</h2>
       <p class="score">${view.runs[index]}</p>
       <p class="caption">${label}${won ? " · won" : ""}</p>
+      ${split}
+    </article>`;
+}
+
+function renderAverages(view) {
+  const people = view.averages.players.flat().map((player) => avgCard(player.name, player, false)).join("");
+  const teams = view.format === "teams"
+    ? `<div class="avg-grid">${view.averages.sides.map((stats, index) => avgCard(view.sides[index], stats, true)).join("")}</div>`
+    : "";
+  return `
+    <section class="averages" aria-label="Averages">
+      <h2>Averages</h2>
+      ${teams}
+      ${view.format === "teams" ? `<h3 class="avg-kicker">Players</h3>` : ""}
+      <div class="avg-grid">${people}</div>
+    </section>`;
+}
+
+function avgCard(name, stats, team) {
+  return `
+    <article class="avg-card ${team ? "is-team" : ""}">
+      <h3>${esc(name)}</h3>
+      <p class="avg-line"><span>Runs per visit</span><strong>${formatAverage(stats.runsPerVisit)}</strong></p>
+      <p class="avg-line"><span>Wickets per visit</span><strong>${formatAverage(stats.wicketsPerVisit)}</strong></p>
+      <p class="avg-note">${plural(stats.battingVisits, "batting visit")} · ${plural(stats.bowlingVisits, "bowling visit")}</p>
     </article>`;
 }
 
@@ -661,12 +991,19 @@ function wicketChoice(value) {
   return `<button type="button" data-action="wickets" data-wickets="${value}" class="${on ? "is-on" : ""}" aria-pressed="${on}">${value}</button>`;
 }
 
+function setupChoice(action, value, name, detail, on) {
+  return `
+    <button type="button" data-action="${action}" data-${action}="${value}" class="${on ? "is-on" : ""}" aria-pressed="${on}">
+      <span class="choice-name">${name}</span>
+      <small>${detail}</small>
+    </button>`;
+}
+
 function batsChoice(index) {
   const on = draft.bats === index;
-  const name = clean(index === 0 ? draft.side1 : draft.side2) || `Player ${index + 1}`;
   return `
     <button type="button" id="bats-${index}" data-action="bats" data-bats="${index}" class="${on ? "is-on" : ""}" aria-pressed="${on}">
-      <span class="choice-name">${esc(name)}</span>
+      <span class="choice-name">${esc(sideLabel(index))}</span>
       <small>Bats first</small>
     </button>`;
 }
@@ -701,7 +1038,11 @@ function rulesModal() {
         <div class="rules-body">
           <section>
             <h3>Sides</h3>
-            <p>Two sides, players or teams. The names are only labels. Each side has one batting innings. The higher total wins. Equal runs is a draw.</p>
+            <p>Two singles, or two teams of two. In a team, players take turns. Batting and bowling rotate separately, each time a visit is finished. The higher match total wins. Equal runs is a draw.</p>
+          </section>
+          <section>
+            <h3>Innings</h3>
+            <p>Each side has one or two batting innings. With two, the side batting first bats, then the other side, then the first side again, then the other side. Runs from each innings are added together.</p>
           </section>
           <section>
             <h3>Wickets</h3>
@@ -709,11 +1050,11 @@ function rulesModal() {
           </section>
           <section>
             <h3>Visits</h3>
-            <p>Three darts a visit. The batter throws first, then the bowler, then the batter, and so on.</p>
+            <p>Three darts a visit, or one typed batting total. The batter throws first, then the bowler, then the batter. A typed total counts as one finished visit.</p>
           </section>
           <section>
             <h3>Batter</h3>
-            <p>Single scores the number, double twice, triple three times. Add the visit. Only points above 40 are runs. Bulls score 0: the 25 and the 50 are wickets, not points.</p>
+            <p>Single scores the number, double twice, triple three times. Add the visit. Only points above 40 are runs. Bulls score 0: the 25 and the 50 are wickets, not points. A typed total uses the same rule, and wickets lost default to 0.</p>
             <ul>
               <li>A visit of 60 scores 20 runs.</li>
               <li>A visit of 41 scores 1 run.</li>
@@ -721,65 +1062,121 @@ function rulesModal() {
               <li>Treble 20, treble 19, treble 18 is 171 and scores 131 runs.</li>
               <li>Outer bull loses 1 wicket. Inner bull loses 2.</li>
               <li>Treble 20, outer bull, treble 19 is 77 runs and 1 wicket.</li>
+              <li>Typing 60 with 1 wicket lost scores 20 runs and costs that wicket.</li>
             </ul>
           </section>
           <section>
             <h3>Bowler</h3>
-            <p>Only bulls count. Outer bull is 1 wicket, inner bull is 2. Any other number is off target. Miss records a miss.</p>
+            <p>Only bulls count, and bowling stays dart by dart. Outer bull is 1 wicket, inner bull is 2. Any other number is off target. Miss records a miss.</p>
+          </section>
+          <section>
+            <h3>Declare</h3>
+            <p>The batting side may declare to end the current innings. It asks for confirmation. In a two-innings match they may still have another innings later. A declaration does not add an empty visit. Undo puts the innings back.</p>
           </section>
           <section>
             <h3>All out</h3>
             <p>Scoring stops at once. A bull that would take more wickets than are left just ends the innings. Darts not yet thrown are skipped. If the batter is out during their own visit, runs from the darts already thrown are kept, using the 40 rule.</p>
           </section>
           <section>
-            <h3>Second innings</h3>
-            <p>The roles swap. The side batting second needs one more run than the first innings to win. Play until all out, even after the target has been passed.</p>
+            <h3>Chase</h3>
+            <p>A target is a match-winning target only when the other side has no innings left. Passing them earlier is not yet a win. Once the target is passed, play can continue until all out. End match is there when the result is already decided.</p>
+          </section>
+          <section>
+            <h3>Averages</h3>
+            <p>Runs per visit are runs banked divided by finished batting visits. Wickets per visit are wickets taken while bowling, divided by finished bowling visits. A side with no visits of that kind is shown as a dash.</p>
           </section>
           <section>
             <h3>Undo and saving</h3>
-            <p>Undo removes the last dart and puts the runs and wickets back. It can step into the previous visit. The match stays on this tablet if the screen sleeps or the page is refreshed.</p>
+            <p>Undo removes the last dart, typed visit, declaration, or early finish, and puts the runs and wickets back. The match stays on this tablet if the screen sleeps or the page is refreshed.</p>
           </section>
         </div>
       </div>
     </div>`;
 }
 
-function confirmModal() {
-  const replace = state.confirm === "replace";
-  const title = replace ? "Replace the saved match?" : "Start a new game?";
-  const copy = replace
-    ? "A match is already saved on this tablet. Starting another one replaces it."
-    : "The current match will be cleared from this tablet.";
-  const yes = replace ? "confirm-replace" : "confirm-new";
-  const yesLabel = replace ? "Replace" : "New game";
-  const no = replace ? "resume-saved" : "close-confirm";
-  const noLabel = replace ? "Resume saved" : "Keep playing";
+function confirmModal(view) {
+  const spec = confirmSpec(view);
   return `
     <div class="overlay">
       <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="confirm-title" data-modal>
-        <h2 id="confirm-title">${title}</h2>
-        <p class="confirm-copy">${copy}</p>
+        <h2 id="confirm-title">${spec.title}</h2>
+        <p class="confirm-copy">${spec.copy}</p>
         <div class="confirm-actions">
-          <button type="button" class="texty" data-action="${no}">${noLabel}</button>
-          <button type="button" class="primary" data-action="${yes}">${yesLabel}</button>
+          <button type="button" class="texty" data-action="${spec.no}">${spec.noLabel}</button>
+          <button type="button" class="primary" data-action="${spec.yes}">${spec.yesLabel}</button>
         </div>
       </div>
     </div>`;
+}
+
+function confirmSpec(view) {
+  if (state.confirm === "replace") {
+    return {
+      title: "Replace the saved match?",
+      copy: "A match is already saved on this tablet. Starting another one replaces it.",
+      no: "resume-saved",
+      noLabel: "Resume saved",
+      yes: "confirm-replace",
+      yesLabel: "Replace",
+    };
+  }
+  if (state.confirm === "declare") {
+    const later = view && view.sideInnings < view.inningsEach;
+    const endsMatch = view && view.opponentInningsLeft === 0;
+    let copy = "This ends the current innings. Runs already scored are kept.";
+    if (later) copy += " This side still has another innings in the match.";
+    if (endsMatch) copy += " The match will then be over.";
+    return {
+      title: "Declare the innings?",
+      copy,
+      no: "close-confirm",
+      noLabel: "Keep batting",
+      yes: "confirm-declare",
+      yesLabel: "Declare",
+    };
+  }
+  if (state.confirm === "finish") {
+    return {
+      title: "End the match?",
+      copy: "The winner is already decided. Ending now keeps the current scores and averages.",
+      no: "close-confirm",
+      noLabel: "Keep playing",
+      yes: "confirm-finish",
+      yesLabel: "End match",
+    };
+  }
+  return {
+    title: "Start a new game?",
+    copy: "The current match will be cleared from this tablet.",
+    no: "close-confirm",
+    noLabel: "Keep playing",
+    yes: "confirm-new",
+    yesLabel: "New game",
+  };
 }
 
 function announceChange(before, after) {
   if (after.phase === "break" && before.phase !== "break") {
-    return `${after.sides[after.battingSide]} all out for ${after.runs[after.battingSide]}. Roles reverse.`;
+    const name = after.sides[after.battingSide];
+    const next = after.sides[after.bowlingSide];
+    if (after.endReason === "declare") return `${name} declared on ${after.inningsRuns}. ${next} will bat.`;
+    return `${name} all out for ${after.inningsRuns}. Roles reverse.`;
   }
   if (after.phase === "done" && before.phase !== "done") return resultSentence(after);
+  if (after.visit.length === 0 && after.lastVisit?.kind === "typed") {
+    const last = after.lastVisit;
+    const runs = last.runs === 0 ? "No runs" : plural(last.runs, "run");
+    const wickets = last.wickets ? ` ${plural(last.wickets, "wicket")} lost.` : "";
+    return `Visit ${last.points}. ${runs} banked.${wickets} ${after.throwingName} to bowl.${chaseSpeech(after)}`;
+  }
   const dart = after.visit.at(-1) || after.lastVisit?.darts.at(-1);
   if (!dart) return "";
   let line;
   if (after.visit.length === 0 && after.lastVisit?.role === "batter") {
     const runs = after.lastVisit.runs === 0 ? "No runs" : plural(after.lastVisit.runs, "run");
-    line = `${dart.label}. ${runs} banked. ${after.sides[after.throwingSide]} to bowl.`;
+    line = `${dart.label}. ${runs} banked. ${after.throwingName} to bowl.`;
   } else if (after.visit.length === 0 && after.lastVisit?.role === "bowler") {
-    line = `${dart.label}. ${plural(after.lastVisit.wickets, "wicket")}. ${after.sides[after.throwingSide]} to bat.`;
+    line = `${dart.label}. ${plural(after.lastVisit.wickets, "wicket")}. ${after.throwingName} to bat.`;
   } else if (after.visitRole === "batter") {
     line = `${dart.label}. Visit ${after.visitPoints}. ${plural(after.pendingRuns, "run")}. ${after.wicketsRemaining} wickets standing.`;
   } else {
@@ -806,15 +1203,67 @@ function resumeText(view) {
     return `${view.sides[view.result.side]} won by ${plural(view.result.margin, "run")}.`;
   }
   if (view.phase === "break") {
-    return `${view.sides[view.battingSide]} all out for ${view.runs[view.battingSide]}. Roles reverse.`;
+    const name = view.sides[view.battingSide];
+    if (view.endReason === "declare") return `${name} declared on ${view.inningsRuns}.`;
+    return `${name} all out for ${view.inningsRuns}. Roles reverse.`;
   }
-  const thrower = view.sides[view.throwingSide];
   const role = view.visitRole === "batter" ? "batting" : "bowling";
-  return `${view.sides[0]} ${view.runs[0]}, ${view.sides[1]} ${view.runs[1]}. ${thrower} ${role}, ${view.wicketsRemaining} wickets standing.`;
+  const inningsBit = view.inningsEach === 2 ? ` Innings ${view.sideInnings} of 2.` : "";
+  return `${view.sides[0]} ${view.runs[0]}, ${view.sides[1]} ${view.runs[1]}. ${view.throwingName} ${role}, ${view.wicketsRemaining} wickets standing.${inningsBit}`;
+}
+
+function nextInningsNumber(view) {
+  return view.byInnings[view.bowlingSide].filter((runs) => runs != null).length + 1;
 }
 
 function plural(count, word) {
   return `${count} ${word}${count === 1 ? "" : "s"}`;
+}
+
+function formatAverage(value) {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return value.toFixed(2);
+}
+
+function parseTotal(value) {
+  const text = String(value ?? "").trim();
+  if (!/^\d{1,3}$/.test(text)) return null;
+  const points = Number(text);
+  if (points > 180) return null;
+  return points;
+}
+
+function typedPreviewText(points) {
+  if (points == null) return "Enter the visit total, from 0 to 180";
+  const runs = runsFromVisit(points);
+  const runText = runs === 0 ? "no runs" : plural(runs, "run");
+  const wicketText = typedWickets > 0 ? ` · ${plural(typedWickets, "wicket")} lost` : "";
+  return `${points} − 40 = ${runText}${wicketText}`;
+}
+
+function updateTypedPreview() {
+  const preview = document.getElementById("typed-preview");
+  const button = document.getElementById("bank-visit");
+  const points = parseTotal(typedPoints);
+  if (preview) preview.textContent = typedPreviewText(points);
+  if (button) button.disabled = points == null;
+}
+
+function sideLabel(index) {
+  if (draft.format === "teams") {
+    const team = draft.teams[index];
+    const label = clean(team.label);
+    if (label) return label;
+    return fallbackTeam(index);
+  }
+  return clean(draft.singles[index]) || `Player ${index + 1}`;
+}
+
+function fallbackTeam(index) {
+  const team = draft.teams[index];
+  const first = clean(team.players[0]) || `Player ${index * 2 + 1}`;
+  const second = clean(team.players[1]) || `Player ${index * 2 + 2}`;
+  return `${first} & ${second}`;
 }
 
 function clean(value) {
@@ -830,15 +1279,49 @@ function esc(value) {
     .replace(/'/g, "&#39;");
 }
 
+function defaultDraft() {
+  return {
+    format: "singles",
+    inningsEach: 1,
+    wickets: 10,
+    bats: null,
+    battingInput: "darts",
+    singles: ["Player 1", "Player 2"],
+    teams: [
+      { label: "", players: ["Player 1", "Player 2"] },
+      { label: "", players: ["Player 3", "Player 4"] },
+    ],
+  };
+}
+
 function loadDraft() {
-  const next = { side1: "Player 1", side2: "Player 2", wickets: 10, bats: null };
+  const next = defaultDraft();
   try {
     const raw = localStorage.getItem(SETUP_KEY);
     if (!raw) return next;
     const data = JSON.parse(raw);
-    if (typeof data.side1 === "string") next.side1 = data.side1.slice(0, 24);
-    if (typeof data.side2 === "string") next.side2 = data.side2.slice(0, 24);
+    if (data.format === "teams") next.format = "teams";
+    if (data.inningsEach === 2) next.inningsEach = 2;
     if (data.wickets === 11) next.wickets = 11;
+    if (data.battingInput === "total") next.battingInput = "total";
+    if (typeof data.side1 === "string") next.singles[0] = data.side1.slice(0, 24);
+    if (typeof data.side2 === "string") next.singles[1] = data.side2.slice(0, 24);
+    if (Array.isArray(data.singles)) {
+      data.singles.slice(0, 2).forEach((name, index) => {
+        if (typeof name === "string") next.singles[index] = name.slice(0, 24);
+      });
+    }
+    if (Array.isArray(data.teams)) {
+      data.teams.slice(0, 2).forEach((team, index) => {
+        if (!team || typeof team !== "object") return;
+        if (typeof team.label === "string") next.teams[index].label = team.label.slice(0, 24);
+        if (Array.isArray(team.players)) {
+          team.players.slice(0, 2).forEach((name, player) => {
+            if (typeof name === "string") next.teams[index].players[player] = name.slice(0, 24);
+          });
+        }
+      });
+    }
   } catch {
     /* Ignore a broken setup save. */
   }
@@ -863,9 +1346,14 @@ function loadOffer() {
 function persistDraft() {
   try {
     localStorage.setItem(SETUP_KEY, JSON.stringify({
-      side1: draft.side1,
-      side2: draft.side2,
+      format: draft.format,
+      inningsEach: draft.inningsEach,
       wickets: draft.wickets,
+      battingInput: draft.battingInput,
+      side1: draft.singles[0],
+      side2: draft.singles[1],
+      singles: draft.singles,
+      teams: draft.teams,
     }));
   } catch {
     /* Ignore private-mode storage failures. */
