@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Wickets and a dart">
+  <rect width="64" height="64" rx="14" fill="#10241c"/>
+  <circle cx="32" cy="37" r="19" fill="#18382b"/>
+  <ellipse cx="32" cy="49" rx="16" ry="3.2" fill="#10241c" opacity="0.45"/>
+  <rect x="19.5" y="18" width="5.2" height="30" rx="2" fill="#e7b45a"/>
+  <rect x="29.4" y="15.5" width="5.2" height="32.5" rx="2" fill="#f6d48a"/>
+  <rect x="39.3" y="18" width="5.2" height="30" rx="2" fill="#e7b45a"/>
+  <rect x="18" y="15" width="14.2" height="3.3" rx="1.5" fill="#f7f3ea"/>
+  <rect x="31.8" y="15" width="14.2" height="3.3" rx="1.5" fill="#f7f3ea"/>
+  <path d="M13.5 51.5 L29.2 36.2" stroke="#f7f3ea" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M13.5 51.5 L8.6 45.6 L16.2 45.2 Z" fill="#d6ef55"/>
+  <path d="M13.5 51.5 L9.2 56.2 L16.6 56.4 Z" fill="#ff6b63"/>
+  <circle cx="29.4" cy="35.8" r="1.8" fill="#f0c36a"/>
+</svg>
